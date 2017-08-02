@@ -35,22 +35,33 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
     private final byte[] bytes;
     private final byte[] salt = new byte[8];
 
+
+
+    private static final ObjectStreamField[] serialPersistentFields = {};
+
+
+
     public SecureString(char[] chars) throws GeneralSecurityException {
         new Random(System.currentTimeMillis()).nextBytes(salt);
         this.bytes = encrypt(charToByte(chars));
     }
 
-    public SecureString(InputStream inputStream) throws IOException {
+
+    private SecureString(byte[] bytes, byte[] salt){
+        this.bytes = bytes;
+        System.arraycopy(this.salt, 0, salt, 0 ,8);
+    }
+
+    private SecureString(InputStream inputStream) throws IOException {
         java.io.ObjectInputStream objectInputStream = new java.io.ObjectInputStream(inputStream);
         byte[] b = null;
-        byte[] s = null;
         try {
-            b = (byte[]) objectInputStream.readObject();
-            s = (byte[]) objectInputStream.readObject();
-            System.arraycopy(s, 0, salt, 0 ,8);
+            ObjectInputStream.GetField f= objectInputStream.readFields();
+            b = (byte[]) f.get("bytes", new byte[0]);
+            System.arraycopy(f.get("salt", salt), 0, salt, 0 ,8);
         } catch (ClassNotFoundException e) {
         }
-        bytes =b;
+        bytes = b;
     }
 
     @Override
@@ -58,19 +69,13 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
         try {
             return getValue().length;
         } catch (GeneralSecurityException e) {
-
         }
         return -1;
     }
 
     @Override
     public char charAt(int index) {
-        try {
-            return getValue()[index];
-        } catch (GeneralSecurityException e) {
-            e.printStackTrace();
-        }
-        throw new IndexOutOfBoundsException();
+        return getValueInternal()[index];
     }
 
     @Override
@@ -196,7 +201,7 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
 
     @Override
     public int hashCode() {
-        return Arrays.hashCode(chars().toArray());
+        return Arrays.hashCode(getValueInternal());
     }
 
     @Override
@@ -204,6 +209,25 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
         return bytesToHex(bytes);
     }
 
+    public boolean isEmpty() {
+        return getValueInternal().length == 0;
+    }
+
+    public char[] toCharArray() {
+        int length = length();
+        char result[] = new char[length];
+        System.arraycopy(getValueInternal(), 0, result, 0, length);
+        return result;
+    }
+
+
+    private char[] getValueInternal(){
+        try {
+            return getValue();
+        } catch (GeneralSecurityException e) {
+        }
+        return null;
+    }
 
     public int indexOf(char ch, int fromIndex) {
         try {
@@ -238,7 +262,6 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
         try {
             return new String(getValue());
         } catch (GeneralSecurityException e) {
-            e.printStackTrace();
         }
         return null;
     }
@@ -247,50 +270,67 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
     public SecureString clone() throws CloneNotSupportedException {
         try {
             ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-            writeObject(new java.io.ObjectOutputStream(byteArrayOutputStream));
-            byteArrayOutputStream.close();
-            System.out.println(byteArrayOutputStream.toByteArray().length);
-            SecureString n = new SecureString(new char[0]);
-            n.readObject(new java.io.ObjectInputStream(new ByteArrayInputStream(byteArrayOutputStream.toByteArray())));
-            return n;
+            writeTo(byteArrayOutputStream);
+            SecureString n = new SecureString(new ByteArrayInputStream(byteArrayOutputStream.toByteArray()));
+            if (n.equals(this)) {
+                return n;
+            }
         } catch (Throwable e) {
         }
         throw new CloneNotSupportedException();
     }
 
 
-    public OutputStream outputStream() throws IOException {
-        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+    public void writeTo(OutputStream outputStream) throws IOException {
         try {
-            writeObject(new java.io.ObjectOutputStream(byteArrayOutputStream));
-            return byteArrayOutputStream;
+            new Serialized(this).writeObject(new java.io.ObjectOutputStream(outputStream));
         } finally {
-            byteArrayOutputStream.close();
+            outputStream.close();
         }
     }
 
-    private void writeObject(java.io.ObjectOutputStream stream)
-            throws IOException {
-        System.out.println("writeObject");
-        stream.writeObject(bytes);
-        stream.writeObject(salt);
+    Object writeReplace() throws ObjectStreamException {
+        return new Serialized(this);
     }
 
-    private void readObject(java.io.ObjectInputStream stream)
-            throws Throwable {
-        Unsafe unsafe = getUnsafe();
-        System.out.println("unsafe");
-        unsafe.putObject(this,unsafe.objectFieldOffset(this.getClass().getDeclaredField("bytes")), stream.readObject());
-        unsafe.putObject(this,unsafe.objectFieldOffset(this.getClass().getDeclaredField("salt")), stream.readObject());
+    private static final class Serialized implements Serializable {
+
+
+        private static final long serialVersionUID = -2247778550767786666L;
+
+
+        private byte[] bytes;
+        private byte[] salt;
+
+
+        private static final ObjectStreamField[] serialPersistentFields = {
+                new ObjectStreamField("bytes", byte[].class),
+                new ObjectStreamField("salt", byte[].class),
+        };
+
+
+        private void writeObject(java.io.ObjectOutputStream stream)
+                throws IOException {
+            System.out.println("writeObject");
+            ObjectOutputStream.PutField f = stream.putFields();
+            f.put("bytes", bytes);
+            f.put("salt", salt);
+        }
+
+        private void readObject(java.io.ObjectInputStream stream)
+                throws Throwable {
+            ObjectInputStream.GetField f= stream.readFields();
+            bytes = (byte[]) f.get("bytes", null);
+            salt = (byte[]) f.get("salt", null);
+        }
+
+        private Serialized(SecureString original) {
+            this.bytes = original.bytes;
+            this.salt = original.salt;
+        }
+
+        Object readResolve() throws ObjectStreamException {
+            return new SecureString(bytes, salt);
+        }
     }
-
-
-    @SuppressWarnings("restriction")
-    private static Unsafe getUnsafe() throws Throwable{
-        Field singleoneInstanceField = Unsafe.class.getDeclaredField("theUnsafe");
-        singleoneInstanceField.setAccessible(true);
-        return (Unsafe) singleoneInstanceField.get(null);
-
-    }
-
 }
