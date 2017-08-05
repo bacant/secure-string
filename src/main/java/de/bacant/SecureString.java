@@ -1,7 +1,6 @@
 package de.bacant;
 
 import com.sanguinecomputing.securestr.Long2Char;
-import sun.misc.Unsafe;
 
 import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
@@ -36,6 +35,8 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
     private final byte[] bytes;
     private final byte[] salt = new byte[8];
     private final int length;
+    private int _hashCode;
+    private boolean hash;
 
 
 
@@ -50,6 +51,7 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
         new Random(System.currentTimeMillis()).nextBytes(salt);
         this.bytes = encrypt(charToByte(chars));
         this.length = chars.length;
+        Arrays.fill(chars, (char)0);
     }
 
     /**
@@ -164,19 +166,25 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
         try {
             v2 = anotherString.getValue();
         } catch (GeneralSecurityException e) {
+            Arrays.fill(v1, (char)0);
             return -1;
         }
 
         int k = 0;
-        while (k < lim) {
-            char c1 = v1[k];
-            char c2 = v2[k];
-            if (c1 != c2) {
-                return c1 - c2;
+        try {
+            while (k < lim) {
+                char c1 = v1[k];
+                char c2 = v2[k];
+                if (c1 != c2) {
+                    return c1 - c2;
+                }
+                k++;
             }
-            k++;
+            return len1 - len2;
+        } finally {
+            Arrays.fill(v1, (char)0);
+            Arrays.fill(v2, (char)0);
         }
-        return len1 - len2;
     }
 
     @Override
@@ -186,10 +194,19 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
         }
         if (obj instanceof SecureString){
             SecureString other = (SecureString) obj;
+            byte[] otherVal = null;
+            byte[] thisVal = null;
             try {
-                return Arrays.equals(other.getValue(), this.getValue());
+                otherVal =other.getValue();
+                thisVal = this.getValue()
+                return Arrays.equals(otherVal, thisVal);
             } catch (GeneralSecurityException e) {
                 // do nothing
+            } finally {
+                if (otherVal != null)
+                    Arrays.fill(otherVal, (char)0);
+                if (otherVal != null)
+                    Arrays.fill(thisVal, (char)0);
             }
         }
         return false;
@@ -197,7 +214,12 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
 
     @Override
     public int hashCode() {
-        return Arrays.hashCode(getValueInternal());
+        if (!hash){
+            byte[] value = getValueInternal();
+            _hashCode = Arrays.hashCode(value);
+            Arrays.fill(value, (char)0);
+        }
+        return ;
     }
 
     @Override
@@ -300,7 +322,7 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
             ObjectInputStream.GetField f= stream.readFields();
             bytes = (byte[]) f.get("bytes", new byte[0]);
             salt = (byte[]) f.get("salt", new byte[8]);
-            length = (int) f.get("length", -1);
+            length = (int) f.get("length", 0);
         }
 
         private Serialized(SecureString original) {
