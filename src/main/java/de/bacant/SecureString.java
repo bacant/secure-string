@@ -35,16 +35,21 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
 
     private final byte[] bytes;
     private final byte[] salt = new byte[8];
+    private final int length;
 
 
 
     private static final ObjectStreamField[] serialPersistentFields = {};
 
 
+    public SecureString() throws GeneralSecurityException {
+        this(new byte[0]);
+    }
 
     public SecureString(char[] chars) throws GeneralSecurityException {
         new Random(System.currentTimeMillis()).nextBytes(salt);
         this.bytes = encrypt(charToByte(chars));
+        this.length = chars.length;
     }
 
     /**
@@ -52,19 +57,16 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
      * @param bytes
      * @param salt
      */
-    private SecureString(byte[] bytes, byte[] salt){
+    private SecureString(byte[] bytes, byte[] salt, int length){
         this.bytes = bytes;
         System.arraycopy(this.salt, 0, salt, 0 ,8);
+        this.length = length;
     }
 
 
     @Override
     public int length() {
-        try {
-            return getValue().length;
-        } catch (GeneralSecurityException e) {
-        }
-        return -1;
+        return length;
     }
 
     @Override
@@ -204,17 +206,17 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
     }
 
     public boolean isEmpty() {
-        return getValueInternal().length == 0;
+        return length == 0;
     }
 
     public char[] toCharArray() {
-        int length = length();
-        char result[] = new char[length];
-        System.arraycopy(getValueInternal(), 0, result, 0, length);
-        return result;
+        getValueInternal();
     }
-
-
+/*
+    public void clear(){
+        Arrays.fill(bytes, (byte)0);
+    }
+*/
     private char[] getValueInternal(){
         try {
             return getValue();
@@ -252,17 +254,9 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
     }
 
 
-    public String toClearText(){
-        try {
-            return new String(getValue());
-        } catch (GeneralSecurityException e) {
-        }
-        return null;
-    }
-
     @Override
     public SecureString clone() throws CloneNotSupportedException {
-        SecureString clone = new SecureString(bytes, salt);
+        SecureString clone = new SecureString(bytes, salt, length);
         if (clone.equals(this)) {
             return clone;
         }
@@ -282,11 +276,12 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
 
         private byte[] bytes;
         private byte[] salt;
-
+        private int length;
 
         private static final ObjectStreamField[] serialPersistentFields = {
                 new ObjectStreamField("bytes", byte[].class),
                 new ObjectStreamField("salt", byte[].class),
+                new ObjectStreamField("length", int.class)
         };
 
 
@@ -296,6 +291,7 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
             ObjectOutputStream.PutField f = stream.putFields();
             f.put("bytes", bytes);
             f.put("salt", salt);
+            f.put("length", length);
             stream.close();
         }
 
@@ -304,15 +300,17 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
             ObjectInputStream.GetField f= stream.readFields();
             bytes = (byte[]) f.get("bytes", new byte[0]);
             salt = (byte[]) f.get("salt", new byte[8]);
+            length = (int) f.get("length", -1);
         }
 
         private Serialized(SecureString original) {
             this.bytes = original.bytes;
             this.salt = original.salt;
+            this.length = original.length;
         }
 
         Object readResolve() throws ObjectStreamException {
-            return new SecureString(bytes, salt);
+            return new SecureString(bytes, salt, length);
         }
     }
 }
