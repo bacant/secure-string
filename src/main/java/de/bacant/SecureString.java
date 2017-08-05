@@ -61,7 +61,7 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
      */
     private SecureString(byte[] bytes, byte[] salt, int length){
         this.bytes = bytes;
-        System.arraycopy(this.salt, 0, salt, 0 ,8);
+        System.arraycopy(salt, 0, this.salt, 0 ,8);
         this.length = length;
     }
 
@@ -219,7 +219,7 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
             _hashCode = Arrays.hashCode(value);
             Arrays.fill(value, (char)0);
         }
-        return ;
+        return _hashCode;
     }
 
     @Override
@@ -278,6 +278,10 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
 
     @Override
     public SecureString clone() throws CloneNotSupportedException {
+        byte[] bytes = new bytes[this.bytes.length];
+        byte[] salt = new bytes[8];
+        System.arraycopy(this.bytes, 0, bytes, 0, bytes.length)
+        System.arraycopy(this.salt, 0, salt, 0, salt.length)
         SecureString clone = new SecureString(bytes, salt, length);
         if (clone.equals(this)) {
             return clone;
