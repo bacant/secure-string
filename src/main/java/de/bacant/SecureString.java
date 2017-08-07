@@ -44,14 +44,13 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
 
 
     public SecureString() throws GeneralSecurityException {
-        this(new byte[0]);
+        this(new char[0]);
     }
 
     public SecureString(char[] chars) throws GeneralSecurityException {
         new Random(System.currentTimeMillis()).nextBytes(salt);
-        this.bytes = encrypt(charToByte(chars));
         this.length = chars.length;
-        Arrays.fill(chars, (char)0);
+        this.bytes = encrypt(SecureUtils.charToByte(chars));
     }
 
     /**
@@ -103,32 +102,6 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
     }
 
 
-    /**
-     * Convert char array to byte array without charset interpretation.
-     * @param chars
-     * @return
-     */
-    private static byte[] charToByte(char[] chars) {
-        byte[] result = new byte[chars.length*2];
-        for (int i=0; i < chars.length; i++) {
-            result[i*2] = (byte) (chars[i] >> 8);
-            result[i*2+1] = (byte) chars[i];
-        }
-        return result;
-    }
-
-    /**
-     * Convert byte array to char array without charset interpretation.
-     * @param bytes
-     * @return
-     */
-    private static char[] byteToChar(byte[] bytes) {
-        char[] result = new char[bytes.length/2];
-        for (int i=0; i < result.length; i++) {
-            result[i] = (char) ((bytes[i*2] << 8) + bytes[i*2+1]);
-        }
-        return result;
-    }
 
     /**
      * Get the content of this string as char[]
@@ -136,7 +109,7 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
      * @throws GeneralSecurityException
      */
     public char[] getValue() throws GeneralSecurityException {
-        return byteToChar(decrypt());
+        return SecureUtils.byteToChar(decrypt());
     }
 
 
@@ -147,7 +120,11 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
         SecretKey key = keyFactory.generateSecret(new PBEKeySpec(getMetaPassword()));
         Cipher pbeCipher = Cipher.getInstance("PBEWithMD5AndDES");
         pbeCipher.init(Cipher.ENCRYPT_MODE, key, new PBEParameterSpec(salt, 20));
-        return pbeCipher.doFinal(cleartext);
+        try {
+            return pbeCipher.doFinal(cleartext);
+        } finally {
+            SecureUtils.clear(cleartext);
+        }
     }
 
 
@@ -166,7 +143,7 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
         try {
             v2 = anotherString.getValue();
         } catch (GeneralSecurityException e) {
-            Arrays.fill(v1, (char)0);
+            SecureUtils.clear(v1);
             return -1;
         }
 
@@ -182,8 +159,8 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
             }
             return len1 - len2;
         } finally {
-            Arrays.fill(v1, (char)0);
-            Arrays.fill(v2, (char)0);
+            SecureUtils.clear(v1);
+            SecureUtils.clear(v2);
         }
     }
 
@@ -194,19 +171,19 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
         }
         if (obj instanceof SecureString){
             SecureString other = (SecureString) obj;
-            byte[] otherVal = null;
-            byte[] thisVal = null;
+            char[] otherVal = null;
+            char[] thisVal = null;
             try {
                 otherVal =other.getValue();
-                thisVal = this.getValue()
+                thisVal = this.getValue();
                 return Arrays.equals(otherVal, thisVal);
             } catch (GeneralSecurityException e) {
                 // do nothing
             } finally {
                 if (otherVal != null)
-                    Arrays.fill(otherVal, (char)0);
+                    SecureUtils.clear(otherVal);
                 if (otherVal != null)
-                    Arrays.fill(thisVal, (char)0);
+                    SecureUtils.clear(thisVal);
             }
         }
         return false;
@@ -215,16 +192,16 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
     @Override
     public int hashCode() {
         if (!hash){
-            byte[] value = getValueInternal();
+            char[] value = getValueInternal();
             _hashCode = Arrays.hashCode(value);
-            Arrays.fill(value, (char)0);
+            SecureUtils.clear(value);
         }
         return _hashCode;
     }
 
     @Override
     public String toString() {
-        return bytesToHex(bytes);
+        return SecureUtils.bytesToHex(bytes);
     }
 
     public boolean isEmpty() {
@@ -232,11 +209,12 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
     }
 
     public char[] toCharArray() {
-        getValueInternal();
+        return getValueInternal();
     }
 /*
     public void clear(){
-        Arrays.fill(bytes, (byte)0);
+        SecureUtils.clear(bytes);
+        SecureUtils.clear(salt);
     }
 */
     private char[] getValueInternal(){
@@ -265,23 +243,13 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
         return indexOf(ch.charAt(0), fromIndex);
     }
 
-    private static String bytesToHex(byte[] bytes) {
-        char[] hexChars = new char[bytes.length * 2];
-        for ( int j = 0; j < bytes.length; j++ ) {
-            int v = bytes[j] & 0xFF;
-            hexChars[j * 2] = hexArray[v >>> 4];
-            hexChars[j * 2 + 1] = hexArray[v & 0x0F];
-        }
-        return new String(hexChars);
-    }
-
 
     @Override
     public SecureString clone() throws CloneNotSupportedException {
-        byte[] bytes = new bytes[this.bytes.length];
-        byte[] salt = new bytes[8];
-        System.arraycopy(this.bytes, 0, bytes, 0, bytes.length)
-        System.arraycopy(this.salt, 0, salt, 0, salt.length)
+        byte[] bytes = new byte[this.bytes.length];
+        byte[] salt = new byte[8];
+        System.arraycopy(this.bytes, 0, bytes, 0, bytes.length);
+        System.arraycopy(this.salt, 0, salt, 0, salt.length);
         SecureString clone = new SecureString(bytes, salt, length);
         if (clone.equals(this)) {
             return clone;
@@ -326,7 +294,7 @@ public class SecureString implements Serializable, Comparable<SecureString>, Cha
             ObjectInputStream.GetField f= stream.readFields();
             bytes = (byte[]) f.get("bytes", new byte[0]);
             salt = (byte[]) f.get("salt", new byte[8]);
-            length = (int) f.get("length", 0);
+            length = f.get("length", 0);
         }
 
         private Serialized(SecureString original) {
